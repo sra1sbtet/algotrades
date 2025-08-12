@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AlgoService</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 980px; }
+      section { margin-bottom: 2rem; }
+      label { display:block; margin-top: .4rem; }
+      input, select { width: 320px; padding: .4rem; }
+      button { margin-top: .6rem; padding: .5rem .8rem; }
+      #chart { height: 400px; border: 1px solid #ddd; }
+      code { word-break: break-all; }
+      .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    </style>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  </head>
+  <body>
+    <h2>AlgoService Demo</h2>
+
+    <section>
+      <h3>Register / Login</h3>
+      <label>Email <input id="email" value="user@example.com" /></label>
+      <label>Password <input id="password" type="password" value="secret123" /></label>
+      <button id="register">Register</button>
+      <button id="login">Login</button>
+      <p>Token: <code id="token"></code></p>
+    </section>
+
+    <section>
+      <h3>Chart</h3>
+      <div class="row">
+        <label>Symbol <input id="symbol" value="US100Cash" /></label>
+        <label>Type
+          <select id="chartType">
+            <option value="line">Line (ticks)</option>
+            <option value="candles">Candles (bars)</option>
+          </select>
+        </label>
+        <label>Interval
+          <select id="interval">
+            <option value="1s">1s</option>
+            <option value="5s">5s</option>
+            <option value="15s">15s</option>
+            <option value="1m">1m</option>
+            <option value="3m">3m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="30m">30m</option>
+            <option value="1d">1d</option>
+            <option value="1w">1w</option>
+          </select>
+        </label>
+        <label>Backfill bars <input id="backfill" value="150" /></label>
+        <button id="connect">Connect</button>
+      </div>
+      <div id="chart"></div>
+    </section>
+
+    <section>
+      <h3>Place Market Order</h3>
+      <p>
+        MT5: symbol as in terminal (e.g., US100Cash, XAUUSD, EURUSD).<br/>
+        Zerodha: EXCHANGE:TRADINGSYMBOL (e.g., NFO:NIFTY24AUGFUT) or NSE:RELIANCE.
+      </p>
+      <label>Symbol <input id="osymbol" value="US100Cash" /></label>
+      <label>Side
+        <select id="side">
+          <option value="buy">buy</option>
+          <option value="sell">sell</option>
+        </select>
+      </label>
+      <label>Qty <input id="qty" value="1" /></label>
+      <label>Product (Zerodha MIS/NRML) <input id="product" value="" placeholder="optional" /></label>
+      <button id="order">Send</button>
+      <pre id="orderResp"></pre>
+    </section>
+
+    <script>
+      const tokenEl = document.getElementById('token');
+      let token = '';
+
+      async function post(path, body) {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+          body: JSON.stringify(body),
+        });
+        const txt = await res.text();
+        if (!res.ok) throw new Error(txt);
+        return JSON.parse(txt);
+      }
+
+      document.getElementById('register').onclick = async () => {
+        try {
+          const out = await post('/auth/register', { email: email.value, password: password.value });
+          token = out.access_token; tokenEl.textContent = token.slice(0, 28) + '...';
+        } catch (e) { alert(e); }
+      };
+      document.getElementById('login').onclick = async () => {
+        try {
+          const out = await post('/auth/login', { username: email.value, password: password.value });
+          token = out.access_token; tokenEl.textContent = token.slice(0, 28) + '...';
+        } catch (e) { alert(e); }
+      };
+
+      let ws;
+      const chart = LightweightCharts.createChart(document.getElementById('chart'), { width: 900, height: 400, timeScale: { timeVisible: true } });
+      let lineSeries = chart.addLineSeries();
+      let candleSeries = null;
+
+      function closeWS() { if (ws) { ws.close(); ws = null; } }
+      function resetSeries() {
+        if (lineSeries) { chart.removeSeries(lineSeries); lineSeries = null; }
+        if (candleSeries) { chart.removeSeries(candleSeries); candleSeries = null; }
+      }
+
+      document.getElementById('connect').onclick = () => {
+        if (!token) { alert('Login first'); return; }
+        closeWS(); resetSeries();
+        const type = document.getElementById('chartType').value;
+        const sym = document.getElementById('symbol').value;
+        const url = new URL(window.location.href);
+        url.protocol = url.protocol.replace('http', 'ws');
+        if (type === 'candles') {
+          candleSeries = chart.addCandlestickSeries();
+          url.pathname = '/ws/bars';
+          url.searchParams.set('symbol', sym);
+          url.searchParams.set('interval', document.getElementById('interval').value);
+          url.searchParams.set('backfill', document.getElementById('backfill').value);
+          url.searchParams.set('token', token);
+          ws = new WebSocket(url.toString());
+          ws.onmessage = (ev) => {
+            const m = JSON.parse(ev.data);
+            if (m && m.type === 'snapshot' && Array.isArray(m.bars)) {
+              const data = m.bars.map(b => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c }));
+              candleSeries.setData(data);
+              return;
+            }
+            const b = m && (m.type === 'bar' ? m : null) || (m && m.o != null ? { ...m, type: 'bar' } : null);
+            if (b) {
+              candleSeries.update({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c });
+            }
+          };
+        } else {
+          lineSeries = chart.addLineSeries();
+          url.pathname = '/ws/quotes';
+          url.searchParams.set('symbol', sym);
+          url.searchParams.set('token', token);
+          ws = new WebSocket(url.toString());
+          ws.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg && msg.t && msg.price != null) {
+              lineSeries.update({ time: Math.floor(Date.parse(msg.t) / 1000), value: msg.price });
+            }
+          };
+        }
+        ws.onclose = () => console.log('WS closed');
+      };
+
+      document.getElementById('order').onclick = async () => {
+        if (!token) { alert('Login first'); return; }
+        try {
+          const payload = {
+            symbol: document.getElementById('osymbol').value,
+            side: document.getElementById('side').value,
+            qty: parseFloat(document.getElementById('qty').value),
+          };
+          const prod = document.getElementById('product').value.trim();
+          if (prod) payload.product = prod;
+          const out = await post('/orders', payload);
+          document.getElementById('orderResp').textContent = JSON.stringify(out, null, 2);
+        } catch (e) { alert(e); }
+      };
+    </script>
+  </body>
+</html>
