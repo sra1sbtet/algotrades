@@ -1,0 +1,12 @@
+fastapi==0.112.2
+uvicorn[standard]==0.30.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+sqlalchemy==2.0.32
+pydantic-settings==2.3.4
+loguru==0.7.2
+requests==2.32.3
+
+# Brokers (install separately as needed)
+# MetaTrader5==5.0.45  # Windows only
+# kiteconnect==5.0.1   # For Zerodha integration
