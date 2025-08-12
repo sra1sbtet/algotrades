@@ -1,0 +1,12 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+loguru==0.7.2
+aiofiles==23.2.1
+# MetaTrader5==5.0.45  # Optional - for MT5 historical data backfill
+# kiteconnect==4.1.0   # Optional - for Zerodha integration
