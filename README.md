@@ -42,4 +42,4 @@ Open http://127.0.0.1:8000/static/:
 ## Notes
 
 - WebSocket quotes are mock data now. Replace with real broker/data feed later.
-- Trading is risky; comply with your broker’s terms and local regulations.# algotrades
+- Trading is risky; comply with your broker’s terms and local regulations.
